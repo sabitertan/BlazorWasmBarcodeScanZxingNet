@@ -1,0 +1,125 @@
+﻿@page "/"
+@using System.IO
+
+<h3>BarcodeScannerPage</h3>
+
+<InputFile OnChange="@HandleFileSelected" />
+
+<br />
+<br />
+<br />
+
+<table width="100%">
+    <tr>
+        <th>Name</th>
+        <th>Image</th>
+        <th>Decoded Text</th>
+    </tr>
+    <tr>
+        <td>
+            @FileName
+        </td>
+        <td>
+            @if (!string.IsNullOrEmpty(ImageSource))
+            {
+                <img src="@ImageSource" alt="uploaded image" />
+            }
+        </td>
+        <td>
+            <p>@DecodedText</p>
+        </td>
+    </tr>
+</table>
+
+@code {
+
+    public string ImageSource = string.Empty;
+    public string DecodedText = string.Empty;
+    public string FileName = string.Empty;
+    private Dictionary<IBrowserFile, string> loadedFiles =
+    new Dictionary<IBrowserFile, string>();
+    private long maxFileSize = 1024 * 1024;
+    private int maxAllowedFiles = 1;
+    private bool isLoading;
+    string exceptionMessage;
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        ImageSource = string.Empty;
+        DecodedText = string.Empty;
+        FileName = string.Empty;
+        isLoading = true;
+        loadedFiles.Clear();
+        exceptionMessage = string.Empty;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(maxAllowedFiles))
+            {
+                using var reader =
+                    new StreamReader(file.OpenReadStream(maxFileSize));
+
+                loadedFiles.Add(file, await reader.ReadToEndAsync());
+            }
+        }
+        catch (Exception ex)
+        {
+            exceptionMessage = ex.Message;
+        }
+
+        isLoading = false;
+
+        var browserFile = loadedFiles.FirstOrDefault().Key;
+        if (browserFile != null)
+        {
+            FileName = browserFile.Name;
+
+
+
+            var resizedBrowserFile = await browserFile.RequestImageFileAsync("image/*", 100, 100);
+            var buffer = new byte[resizedBrowserFile.Size];
+            var stream = resizedBrowserFile.OpenReadStream();
+            await stream.ReadAsync(buffer);
+            var res = await GetBarcodeFromStreamAsync(browserFile.OpenReadStream());
+            DecodedText = res;
+            var base64String = ByteArrayToBase64String(buffer);
+            ImageSource = base64String;
+        }
+    }
+
+    /*
+    public string MemoryStreamToBase64StringAsync(MemoryStream stream)
+    {
+        stream.Seek(0, 0);
+        var base64 = Convert.ToBase64String(stream.ToArray());
+        return base64;
+    }
+    */
+
+    public string ByteArrayToBase64String(byte[] byteArray, string format = "image/*")
+    {
+
+        return $"data:{format};base64,{Convert.ToBase64String(byteArray)}";
+
+
+    }
+
+    public async Task<string> GetBarcodeFromStreamAsync(Stream stream)
+    {
+
+        try
+        {
+            using (var image = await SixLabors.ImageSharp.Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(stream))
+            {
+                var reader = new ZXing.ImageSharp.BarcodeReader<SixLabors.ImageSharp.PixelFormats.Rgba32>();
+                var result = reader.Decode(image);
+                return result?.Text;
+            }
+        }
+        catch (Exception exc)
+        {
+            return exc.Message;
+        }
+
+    }
+
+}
