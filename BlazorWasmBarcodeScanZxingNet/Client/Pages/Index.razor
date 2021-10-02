@@ -111,8 +111,8 @@
 
     public string ByteArrayToBase64String(byte[] byteArray, string format = "image/*")
     {
-
-        return $"data:{format};base64,{Convert.ToBase64String(byteArray)}";
+        var string0 = Convert.ToBase64String(byteArray);
+        return $"data:{format};base64,{string0}";
 
 
     }
