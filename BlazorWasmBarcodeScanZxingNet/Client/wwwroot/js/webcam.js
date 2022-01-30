@@ -11,7 +11,7 @@
                 video.play();
             };
             //mirror image
-            video.style.transform = "scaleX(-1)";
+           // video.style.transform = "scaleX(-1)";
         });
     }
 }
@@ -19,7 +19,7 @@
 function getFrame(src, dest, dotNetHelper) {
     let video = document.getElementById(src);
     let canvas = document.getElementById(dest);
-    canvas.getContext('2d').drawImage(video, 0, 0, 1024, 1024);
+    canvas.getContext('2d').drawImage(video, 0, 0, 400, 400);
 
     let dataUrl = canvas.toDataURL("image/jpeg");
     return dataUrl;
