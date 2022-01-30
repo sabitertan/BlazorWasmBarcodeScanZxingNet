@@ -1,6 +1,15 @@
-﻿@page "/"
+﻿@page "/video"
 @using System.IO
+@inject IJSRuntime JSRuntime
 
+<h1>Blazor Webcam</h1>
+<video id="videoFeed" width="1024" height="1024" /><canvas class="d-none" id="currentFrame" width="1024" height="1024" /><br />
+<button class="btn btn-primary mb-3" @onclick="CaptureFrame">Capture Frame</button> <br />
+@if (!string.IsNullOrEmpty(frameUri))
+{
+    <img src="@frameUri" />
+}
+<p>@DecodedTextFromVideo</p>
 <h3>BarcodeScannerPage</h3>
 
 <InputFile OnChange="@HandleFileSelected" />
@@ -32,9 +41,10 @@
 </table>
 
 @code {
-
+    private string frameUri;
     public string ImageSource = string.Empty;
     public string DecodedText = string.Empty;
+    public string DecodedTextFromVideo = string.Empty;
     public string FileName = string.Empty;
     private Dictionary<IBrowserFile, string> loadedFiles =
     new Dictionary<IBrowserFile, string>();
@@ -43,7 +53,10 @@
     private bool isLoading;
     string exceptionMessage;
     string imageFormat = "image/*";
-
+    protected override async Task OnInitializedAsync()
+    {
+        await JSRuntime.InvokeVoidAsync("startVideo", "videoFeed");
+    }
     private async Task HandleFileSelected(InputFileChangeEventArgs e)
     {
         ImageSource = string.Empty;
@@ -77,7 +90,7 @@
             FileName = browserFile.Name;
 
 
-            var resizedBrowserFile = await browserFile.RequestImageFileAsync(imageFormat, 500, 500);
+            var resizedBrowserFile = await browserFile.RequestImageFileAsync(imageFormat, 100, 100);
             Stream stream = resizedBrowserFile.OpenReadStream(resizedBrowserFile.Size);
             var res = await GetBarcodeFromStreamAsync(stream);
 
@@ -85,38 +98,64 @@
 
 
             /*
-            @TODO: 
+            @TODO:
             Check if Stream.Position or Stream.Seek is possible, so we don't dispose current stream
-            
-            */ 
+
+            */
             stream.Dispose();
 
             stream = resizedBrowserFile.OpenReadStream(resizedBrowserFile.Size);
 
             var buffer = new byte[resizedBrowserFile.Size];
             await stream.ReadAsync(buffer);
-            var base64String = ByteArrayToBase64String(buffer, imageFormat);
+            var base64String = ByteArrayToBase64DataUrl(buffer, imageFormat);
             ImageSource = $"data:{imageFormat};base64,{Convert.ToBase64String(buffer)}";
         }
     }
 
     /*
     public string MemoryStreamToBase64StringAsync(MemoryStream stream)
-    {
+        {
         stream.Seek(0, 0);
         var base64 = Convert.ToBase64String(stream.ToArray());
         return base64;
     }
     */
 
-    public string ByteArrayToBase64String(byte[] byteArray, string format = "image/*")
+    public string ByteArrayToBase64DataUrl(byte[] byteArray, string format = "image/*")
     {
-        var string0 = Convert.ToBase64String(byteArray);
-        return $"data:{format};base64,{string0}";
+        var base64String = Convert.ToBase64String(byteArray);
+        return $"data:{format};base64,{base64String}";
 
 
     }
+    public byte[] Base64DataUrlToByteArray(string dataUrl)
+    {
+        string[] dataString = dataUrl.Split(";");
+        string[] dataBase64String = dataString[1].Split(",");
+        string base64String = dataBase64String[1];
+        return Convert.FromBase64String(base64String);
+    }
+    public async Task<string> GetBarcodeFromBase64DataUrl( string dataUrl)
+    {
+        byte[] imageBytes = Base64DataUrlToByteArray(dataUrl);
+        Stream stream = new MemoryStream(imageBytes);
 
+        try
+        {
+            using (var image = await SixLabors.ImageSharp.Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(stream))
+            {
+                var reader = new ZXing.ImageSharp.BarcodeReader<SixLabors.ImageSharp.PixelFormats.Rgba32>();
+                var result = reader.Decode(image);
+                return result?.Text;
+            }
+        }
+        catch (Exception exc)
+        {
+            return exc.Message;
+        }
+
+    }
     public async Task<string> GetBarcodeFromStreamAsync(Stream stream)
     {
 
@@ -134,6 +173,13 @@
             return exc.Message;
         }
 
+    }
+    private async Task CaptureFrame()
+    {
+        frameUri =  await JSRuntime.InvokeAsync<String>("getFrame", "videoFeed", "currentFrame", DotNetObjectReference.Create(this));
+        string decodedFromFrame = await GetBarcodeFromBase64DataUrl(frameUri);
+        DecodedTextFromVideo = decodedFromFrame;
+        StateHasChanged();
     }
 
 }
