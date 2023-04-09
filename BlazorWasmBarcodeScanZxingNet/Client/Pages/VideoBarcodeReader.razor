@@ -1,19 +1,34 @@
 ﻿@page "/video"
 @using System.IO
+@using System.Threading;
 @inject IJSRuntime JSRuntime
 
 <h1>Blazor Webcam</h1>
 <video id="videoFeed" width="400" height="400" /><canvas class="d-none" id="currentFrame" width="400" height="400" /><br />
+<button class="btn btn-primary mb-3" @onclick="async () => { ContinuousDecoding = true; await StartAutoCapture(DecodingCancellationToken.Token); }">Start Auto Capture</button>
+@if (ContinuousDecoding)
+{
+    <button class="btn btn-primary mb-3 ml-3" type="button" disabled>
+        <span class="spinner-grow spinner-grow-sm" role="status" aria-hidden="true"></span>
+        Auto Capturing...
+    </button>}
+
+<br />
+<button class="btn btn-primary mb-3" @onclick="async () => await StopAutoCapture() ">Stop Auto Capture</button>
+<br />
 <button class="btn btn-primary mb-3" @onclick="CaptureFrame">Capture Frame</button> <br />
-@if (!string.IsNullOrEmpty(frameUri))
+@if (!string.IsNullOrEmpty(DecodedTextFromVideo))
 {
     <img src="@frameUri" />
 }
+
 <p>@DecodedTextFromVideo</p>
 
 
 @code {
     private string frameUri;
+    private bool ContinuousDecoding;
+    CancellationTokenSource DecodingCancellationToken = new CancellationTokenSource();
     public string DecodedTextFromVideo = string.Empty;
     protected override async Task OnInitializedAsync()
     {
@@ -34,7 +49,7 @@
         string base64String = dataBase64String[1];
         return Convert.FromBase64String(base64String);
     }
-    public string GetBarcodeFromBase64DataUrl( string dataUrl)
+    public string GetBarcodeFromBase64DataUrl(string dataUrl)
     {
         byte[] imageBytes = Base64DataUrlToByteArray(dataUrl);
         //Stream stream = new MemoryStream(imageBytes);
@@ -50,12 +65,47 @@
         }
         catch (Exception exc)
         {
-            return exc.Message;
+            Console.WriteLine(exc.Message);
+            return null;
         }
 
     }
 
-    private async Task CaptureFrame()
+    private async Task StartAutoCapture(CancellationToken cancellationToken)
+    {
+        DecodedTextFromVideo = null;
+        while (ContinuousDecoding)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Console.WriteLine("Stopping continuous decoding, cancellation has been requested...");
+                break;    
+            }
+            try
+            {
+                await CaptureFrame();
+            }
+            catch (Exception ex)
+            {
+                //  throw new Exception(ex.Message);
+            }
+            await Task.Delay(100);
+        }
+
+    }
+
+    private async Task StopAutoCapture()
+    {
+        ContinuousDecoding = false;
+        // @TODO: improve this
+        DecodingCancellationToken.Cancel();
+        await Task.Delay(150);
+        DecodingCancellationToken.Dispose();
+        await Task.Delay(50);
+        DecodingCancellationToken = new CancellationTokenSource();
+    }
+
+        private async Task CaptureFrame()
     {
         frameUri =  await JSRuntime.InvokeAsync<String>("getFrame", "videoFeed", "currentFrame", DotNetObjectReference.Create(this));
         string decodedFromFrame = GetBarcodeFromBase64DataUrl(frameUri);
